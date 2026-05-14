@@ -40,20 +40,18 @@ aiopslab-mcp-server/
 - 通过 tmux 持久化运行
 - MCP Session 管理（`mcp-session-id` Header）
 
-### 2. 工具注册（9个）
-- 原有 8 个工具全部正常注册：`get_logs`、`get_metrics`、`exec_shell`、`get_traces`、`submit`、`list_namespaces`、`list_services`、`list_pods`
-- 新增 `list_problems`（懒加载，不依赖 ProblemRegistry）
+### 2. 工具注册（9/14）
+`get_logs`、`get_metrics`、`exec_shell`、`get_traces`、`submit`、`list_namespaces`、`list_services`、`list_pods` `list_problems`
 
 ### 3. witty-diagnosis-agent 配置
 - `opencode.json` 中配置为 `type: remote`，URL: `http://172.29.89.45:8765/mcp`（此处需更改为自己的服务地址）
 - Skill 文档已更新：
-  - `C:\Users\86135\.config\opencode\skills\AIOPSLAB.md` — 9 个工具完整说明 + 工作流
-  - `C:\Users\86135\.config\opencode\skills\aiopslab\SKILL.md` — 详细参考文档
+  - aiopslab\SKILL.md` — 详细参考文档
 
 ### 4. 网络架构
 - MCP Server 运行在 WSL（K8s 集群可访问）
 - witty-diagnosis-agent 通过 HTTP Remote 模式连接
-- 端口转发（`netsh interface portproxy`）已配置（WSL IP: `172.29.89.45`）
+- 端口转发（`netsh interface portproxy`）配置WSL IP 
 
 ## 仍需改进的地方
 
@@ -72,13 +70,14 @@ aiopslab-mcp-server/
 - 方案 C：迁移 MCP Server 到 Windows 直接运行（需解决 K8s 访问问题）
 
 #### 2. Problem Lifecycle 工具全部禁用（init_problem/submit_diagnosis/get_results/cleanup_problem）
-**现象**：这 5 个工具因导入链挂起无法注册
+**现象**：这几个工具因导入链挂起无法注册
 
 **根因**：`aiopslab.orchestrator.evaluators.quantitative` 模块在 import 时调用 `tiktoken.encoding_for_model()`，该函数需要从 `openaipublic.blob.core.windows.net` 下载 BPE 模型文件（约 400KB），但 WSL 环境无法访问该地址，导致导入挂起 60 秒后超时
 
 **影响**：无法完成端到端的故障诊断流程（初始化 → 诊断 → 提交 → 获取结果 → 清理）
 
 **解决方向**：
+
 - 方案 A（推荐）：在 WSL 环境中预先下载 tiktoken 模型文件到本地缓存
   ```bash
   # 在 WSL 中预先触发下载
@@ -125,7 +124,7 @@ ss -tln | grep 8765
 
 ### 2. 配置 witty-diagnosis-agent
 
-在 `opencode.json` 中添加 MCP 配置：
+（1）在 `opencode.json` 中添加 MCP 配置：
 
 ```jsonc
 {
@@ -142,6 +141,8 @@ ss -tln | grep 8765
   ]
 }
 ```
+
+（2）将aiopslab_skill放在C:\Users\\{your_username}\\.config\opencode\skills中。没有该目录就自己手动创建一个。
 
 ### 3. 使用工具
 
