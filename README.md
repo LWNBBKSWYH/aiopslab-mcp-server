@@ -250,11 +250,10 @@ Client                           Server (FastMCP HTTP)
 
 | 文件 | 说明 |
 |------|------|
-| `E:\桌面\AiOps\aiopslab-mcp-server\mcp_server.py` | MCP Server 主程序 |
-| `E:\桌面\AiOps\aiopslab-mcp-server\verify.py` | 工具注册验证脚本 |
-| `E:\桌面\AiOps\aiopslab-mcp-server\parse_registry.py` | 无依赖的问题列表解析工具 |
-| `C:\Users\86135\.config\opencode\skills\AIOPSLAB.md` | Skill 文档（扁平面） |
-| `C:\Users\86135\.config\opencode\skills\aiopslab\SKILL.md` | Skill 文档（目录结构） |
+| \aiopslab-mcp-server\mcp_server.py` | MCP Server 主程序 |
+| `\aiopslab-mcp-server\verify.py` | 工具注册验证脚本 |
+| \aiopslab-mcp-server\parse_registry.py` | 无依赖的问题列表解析工具 |
+| `\aiopslab-mcp-server\aiopslab_skill` | Skill 文档（目录结构） |
 
 ## TODO
 
