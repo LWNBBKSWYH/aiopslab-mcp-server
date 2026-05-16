@@ -6,8 +6,12 @@ AIOpsLab MCP Server
 不修改 AIOpsLab 源码，只通过 import 调用其工具函数。
 """
 
-import sys
 import os
+
+# Set tiktoken cache directory - must be before any aiopslab import
+os.environ['DATA_GYM_CACHE_DIR'] = os.path.expanduser('~/data-gym-cache')
+
+import sys
 
 # Add AIOpsLab path (without modifying its source code)
 AIOPSLAB_PATH = os.path.join(os.path.dirname(__file__), "..", "aiopslab", "AIOpsLab")
@@ -21,7 +25,6 @@ else:
 from fastmcp import FastMCP
 
 # Global state for session management
-# Note: In stateless HTTP mode, these persist only while the server runs
 _orchestrator = None
 _current_namespace = None
 _current_problem_id = None
@@ -31,14 +34,14 @@ mcp = FastMCP("AIOpsLab Tools")
 
 print("FastMCP server created, registering tools...")
 
+
 # ============================================================
-# Original 8 tools (verified working)
+# 8 Original tools
 # ============================================================
 
 @mcp.tool()
 def get_logs(namespace: str, service: str) -> str:
-    """
-    Collects relevant log data from a pod using Kubectl or from a container with Docker.
+    """Collects relevant log data from a pod using Kubectl or from a container with Docker.
 
     Args:
         namespace (str): The namespace in which the service is running.
@@ -53,8 +56,7 @@ def get_logs(namespace: str, service: str) -> str:
 
 @mcp.tool()
 def get_metrics(namespace: str, duration: int = 5) -> str:
-    """
-    Collects metrics data from the service using Prometheus.
+    """Collects metrics data from the service using Prometheus.
 
     Args:
         namespace (str): The namespace in which the service is running.
@@ -69,8 +71,7 @@ def get_metrics(namespace: str, duration: int = 5) -> str:
 
 @mcp.tool()
 def exec_shell(command: str, timeout: int = 30) -> str:
-    """
-    Execute any shell command in a predefined debugging environment.
+    """Execute any shell command in a predefined debugging environment.
 
     Note: this is NOT A STATEFUL OR INTERACTIVE shell session. So you cannot
     execute commands like "kubectl edit".
@@ -88,8 +89,7 @@ def exec_shell(command: str, timeout: int = 30) -> str:
 
 @mcp.tool()
 def get_traces(namespace: str, duration: int = 5) -> str:
-    """
-    Collects trace data from the service using Jaeger.
+    """Collects trace data from the service using Jaeger.
 
     Args:
         namespace (str): The namespace in which the service is running.
@@ -104,8 +104,7 @@ def get_traces(namespace: str, duration: int = 5) -> str:
 
 @mcp.tool()
 def submit(has_anomaly: str) -> str:
-    """
-    Submit if anomalies are detected to the orchestrator for evaluation.
+    """Submit if anomalies are detected to the orchestrator for evaluation.
 
     Args:
         has_anomaly (str): "Yes" if anomalies are detected, "No" otherwise.
@@ -120,8 +119,7 @@ def submit(has_anomaly: str) -> str:
 
 @mcp.tool()
 def list_namespaces() -> list[str]:
-    """
-    List all available namespaces in the Kubernetes cluster.
+    """List all available namespaces in the Kubernetes cluster.
 
     Returns:
         list[str]: List of namespace names.
@@ -134,8 +132,7 @@ def list_namespaces() -> list[str]:
 
 @mcp.tool()
 def list_services(namespace: str) -> list[str]:
-    """
-    List all services in a namespace.
+    """List all services in a namespace.
 
     Args:
         namespace (str): The namespace to query.
@@ -151,8 +148,7 @@ def list_services(namespace: str) -> list[str]:
 
 @mcp.tool()
 def list_pods(namespace: str) -> list[str]:
-    """
-    List all pods in a namespace.
+    """List all pods in a namespace.
 
     Args:
         namespace (str): The namespace to query.
@@ -167,13 +163,12 @@ def list_pods(namespace: str) -> list[str]:
 
 
 # ============================================================
-# Problem Lifecycle Management (DISABLED - tiktoken network issue)
+# Problem Lifecycle Management
 # ============================================================
 
 @mcp.tool()
 def list_problems(task_type: str = None) -> list[str]:
-    """
-    List all available problem IDs in AIOpsLab.
+    """List all available problem IDs in AIOpsLab.
 
     Uses lazy parsing - does NOT import ProblemRegistry to avoid tiktoken hang.
 
@@ -192,33 +187,21 @@ def list_problems(task_type: str = None) -> list[str]:
     with open(registry_path, 'r') as f:
         content = f.read()
 
-    # Parse problem IDs from registry.py - pattern: "prefix-task_type-N"
-    pattern = r'"([a-z][a-z0-9_]*(?:_[a-z][a-z0-9_]*)*-[a-z]+-\d+)"'
-    matches = re.findall(pattern, content, re.IGNORECASE)
+    # Patterns to extract problem IDs:
+    # p1: prefix-task_type-N (with variant number, e.g., pod_failure_hotel_res-detection-1)
+    # p2: prefix-task_type (no variant, e.g., flower_node_stop-detection, container_kill-detection)
+    p1 = r'"([a-z][a-z0-9_]*(?:_[a-z][a-z0-9_]*)*-[a-z]+-\d+)"'
+    p2 = r'"([a-z][a-z0-9_]*(?:_[a-z][a-z0-9_]*)*-[a-z]+)"'
+    m1 = re.findall(p1, content, re.IGNORECASE)
+    m2 = re.findall(p2, content, re.IGNORECASE)
+    all_ids = sorted(set(m1) | set(m2))
 
-    unique_ids = sorted(set(matches))
+    return all_ids
 
-    if task_type:
-        unique_ids = [pid for pid in unique_ids if f"-{task_type}-" in pid]
-
-    return unique_ids
-
-
-# NOTE: The following tools are temporarily disabled because they require
-# importing ProblemRegistry which imports all problem classes, which transitively
-# import evaluators.quantitative, which calls tiktoken.encoding_for_model().
-# This fails in WSL due to no internet access to openaipublic.blob.core.windows.net.
-#
-# To re-enable:
-#   1. Either pre-download the tiktoken BPE model in the WSL environment
-#   2. Or configure network access to openaipublic.blob.core.windows.net from WSL
-#
-# Then uncomment the @mcp.tool() decorators below.
 
 @mcp.tool()
 def init_problem(problem_id: str) -> dict:
-    """
-    Initialize a problem - deploy app, inject fault, start workload.
+    """Initialize a problem - deploy app, inject fault, start workload.
 
     This sets up the environment for diagnosis. After calling this,
     use get_logs(), get_metrics(), exec_shell() to diagnose the issue.
@@ -260,8 +243,7 @@ def init_problem(problem_id: str) -> dict:
 
 @mcp.tool()
 def get_current_namespace() -> str:
-    """
-    Get the namespace of the currently active problem.
+    """Get the namespace of the currently active problem.
 
     Use this after init_problem() to know which namespace to query
     for logs, metrics, etc.
@@ -275,8 +257,7 @@ def get_current_namespace() -> str:
 
 @mcp.tool()
 def submit_diagnosis(answer: str) -> dict:
-    """
-    Submit diagnosis and trigger evaluation.
+    """Submit diagnosis and trigger evaluation.
 
     Args:
         answer (str): The diagnosis answer.
@@ -314,8 +295,7 @@ def submit_diagnosis(answer: str) -> dict:
 
 @mcp.tool()
 def get_results() -> dict:
-    """
-    Get evaluation results from the last submission.
+    """Get evaluation results from the last submission.
 
     Returns:
         dict: Contains evaluation metrics (TTD, TTL, TTA, TTM depending on task type).
@@ -334,8 +314,7 @@ def get_results() -> dict:
 
 @mcp.tool()
 def cleanup_problem() -> str:
-    """
-    Clean up the current problem - recover fault, delete namespace.
+    """Clean up the current problem - recover fault, delete namespace.
 
     Returns:
         str: Status of cleanup.
@@ -360,13 +339,11 @@ def cleanup_problem() -> str:
 
 if __name__ == "__main__":
     print("Starting AIOpsLab MCP Server on http://0.0.0.0:8765")
-    # 使用 stateless 模式
     try:
-        mcp.run(
-            transport="http",
-            host="0.0.0.0",
-            port=8765,
-            stateless=True  # 启用无状态模式
-        )
-    except TypeError:
         mcp.run(transport="http", host="0.0.0.0", port=8765)
+    except Exception as e:
+        print(f"Error: {e}")
+        try:
+            mcp.run(transport="http", host="0.0.0.0", port=8765, stateless=True)
+        except TypeError:
+            mcp.run(transport="http", host="0.0.0.0", port=8765)
