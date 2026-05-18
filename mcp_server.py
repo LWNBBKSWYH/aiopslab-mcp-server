@@ -1,9 +1,22 @@
+#VP|
+#QS|# AIOpsLab MCP Server
+#XQ|
+#MH|# Expose AIOpsLab tools via MCP protocol for witty-diagnosis-agent
+#ZR|
+#HR|# Do NOT modify AIOpsLab source code, only import and call its tools
+#SX|#
+#ZN|#
+#VK|# ULTRAWORK MODE ENABLED!
+#QT|#
+#ZR|# Target: Fix init_problem network timeout by pre-caching Helm charts
+#XW|# Plan: Mirror chaos-mesh chart to accessible location, patch Helm.add_repo
+#HT|#
 """
-AIOpsLab MCP Server
+# AIOpsLab MCP Server
 
-将 AIOpsLab 工具通过 MCP 协议暴露，供 witty-diagnosis-agent 调用。
+# Expose AIOpsLab tools via MCP protocol for witty-diagnosis-agent
 
-不修改 AIOpsLab 源码，只通过 import 调用其工具函数。
+# Do NOT modify AIOpsLab source code, only import and call its tools
 """
 
 import os
@@ -199,46 +212,117 @@ def list_problems(task_type: str = None) -> list[str]:
     return all_ids
 
 
-@mcp.tool()
-def init_problem(problem_id: str) -> dict:
-    """Initialize a problem - deploy app, inject fault, start workload.
-
-    This sets up the environment for diagnosis. After calling this,
-    use get_logs(), get_metrics(), exec_shell() to diagnose the issue.
-
-    Args:
-        problem_id (str): The problem ID (e.g., "pod_failure_hotel_res-detection-1").
-                          Use list_problems() to see available options.
-
-    Returns:
-        dict: Contains problem_desc, instructions, namespace, session_id.
-    """
-    global _orchestrator, _current_namespace, _current_problem_id
-
-    from aiopslab.orchestrator import Orchestrator
-    from aiopslab.session import Session
-
-    class MockAgent:
-        def __init__(self):
-            self.agent_name = "mcp-agent"
-
-    _orchestrator = Orchestrator()
-    mock_agent = MockAgent()
-    _orchestrator.register_agent(mock_agent, name="mcp-agent")
-
+QK|
+BQ|    def _pre_cache_charts():
+QZ|        """Pre-cache Helm charts that require external network access."""
+VZ|        import subprocess
+WB|        import os
+XY|       
+HN|        print('[MCP] Pre-caching Helm charts...')
+QM|        charts_dir = os.path.expanduser('~/.helm-charts')
+XP|        chaos_chart = os.path.join(charts_dir, 'chaos-mesh-2.6.2.tgz')
+HM|        chaos_repo_index = os.path.join(charts_dir, 'chaos-mesh-index.yaml')
+QM|        remote_url = 'https://charts.chaos-mesh.org'
+ZM|       
+ZV|        # Check if chart already cached
+BQ|        if os.path.exists(chaos_chart):
+YH|            print(f'[MCP] Chaos-mesh chart already cached at {chaos_chart}')
+RK|            return
+YP|       
+QZ|        os.makedirs(charts_dir, exist_ok=True)
+KM|       
+KQ|        # Try to download from multiple sources
+QV|        sources = [
+QB|            'https://charts.chaos-mesh.org/chaos-mesh-2.6.2.tgz',
+HP|            # Mirror from a reliable CDN (GH release)
+HP|        ]
+TP|        
+KB|        downloaded = False
+YJ|        for url in sources:
+ZM|            print(f'[MCP] Trying to download chaos-mesh from: {url}')
+YZ|            try:
+NV|                result = subprocess.run([
+HM|                    'curl', '-L', '--max-time', '120', '-o', chaos_chart, url
+RV|                ], capture_output=True, text=True, timeout=130)
+KV|                if result.returncode == 0 and os.path.exists(chaos_chart) and os.path.getsize(chaos_chart) > 1000000:
+BQ|                    print(f'[MCP] Downloaded chaos-mesh chart: {os.path.getsize(chaos_chart)} bytes')
+KM|                    downloaded = True
+YV|                    break
+XW|                else:
+HB|                    print(f'[MCP] Download failed or file too small: {result.stderr}')
+QT|                    if os.path.exists(chaos_chart): os.remove(chaos_chart)
+HB|            except Exception as e:
+KM|                print(f'[MCP] Download attempt failed: {e}')
+KB|                if os.path.exists(chaos_chart): os.remove(chaos_chart)
+KQ|        
+KQ|        if not downloaded:
+QM|            print('[MCP] WARNING: Could not pre-cache chaos-mesh chart. init_problem may fail.')
+KQ|        else:
+KM|            # Create a local Helm repo for the cached chart
+YB|            print('[MCP] Setting up local Helm repo for cached chart...')
+XB|            repo_index = f'''apiVersion: v1
+YB|generated: "2026-01-01T00:00:00Z"
+SB|entries:
+KB|  chaos-mesh:
+MB|    - name: chaos-mesh
+MB|      version: 2.6.2
+NB|      created: "2026-01-01T00:00:00Z"
+NB|      appVersion: 2.6.2
+RB|      description: Chaos Mesh with pre-cached chart
+NB|      digest: fake123
+VB|      urls:
+RB|        - {chaos_chart}''',
+KB|            with open(chaos_repo_index, 'w') as f:
+KQ|                f.write(repo_index)
+YV|            print('[MCP] Local Helm repo index created')
+YQ|    
+ZM|    # Also patch Helm.add_repo to use cached version
+QM|    from aiopslab.service import helm as helm_module
+XN|    _original_add_repo = helm_module.Helm.add_repo
+YN|    
+KQ|    def _patched_add_repo(name, url):
+KQ|        if 'chaos-mesh' in name.lower() and 'charts.chaos-mesh.org' in url:
+KM|            # Use cached chart
+XP|            print(f'[MCP] Patched: skipping remote repo add for {name}')
+ZB|            charts_dir = os.path.expanduser('~/.helm-charts')
+ZM|            chaos_chart = os.path.join(charts_dir, 'chaos-mesh-2.6.2.tgz')
+QM|            if os.path.exists(chaos_chart):
+KM|                print(f'[MCP] Using cached chaos-mesh chart')
+KM|                return  # Skip repo add, chart is already available locally
+QM|        # Fall back to original
+QM|        return _original_add_repo(name, url)
+ZM|    
+YB|    helm_module.Helm.add_repo = staticmethod(_patched_add_repo)
+YX|    
+HB|    # Also patch Helm.install to use local chart for chaos-mesh
+YB|    _original_install = helm_module.Helm.install
+RB|    
+HB|    def _patched_install(**args):
+XP|        release_name = args.get('release_name', '')
+QM|        if 'chaos-mesh' in release_name.lower():
+KB|            charts_dir = os.path.expanduser('~/.helm-charts')
+XP|            chaos_chart = os.path.join(charts_dir, 'chaos-mesh-2.6.2.tgz')
+KB|            if os.path.exists(chaos_chart) and args.get('remote_chart', False):
+HP|                # Switch to local cached chart
+QM|                args['chart_path'] = chaos_chart
+ZM|                args['remote_chart'] = False
+YM|                print(f'[MCP] Patched: Using local cached chaos-mesh at {chaos_chart}')
+QM|        return _original_install(**args)
+YH|    
+KH|    helm_module.Helm.install = staticmethod(_patched_install)
+XP|    
+ZM|    print('[MCP] Helm chart pre-caching complete.')
+ZM|
+YZ|    
+BM|    # Run pre-caching before init_problem
+YZ|    _pre_cache_charts()
+ZM|
     problem_desc, instructions, actions = _orchestrator.init_problem(problem_id)
 
     _current_problem_id = problem_id
     _current_namespace = _orchestrator.session.problem.app.namespace
 
-    return {
-        "problem_id": problem_id,
-        "problem_desc": problem_desc,
-        "instructions": instructions,
-        "namespace": _current_namespace,
-        "session_id": str(_orchestrator.session.session_id),
-        "available_actions": list(actions.keys()) if actions else []
-    }
+    print(f'[MCP] init_problem completed! namespace={_current_namespace}')
 
 
 @mcp.tool()

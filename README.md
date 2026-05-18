@@ -106,7 +106,7 @@ cat /tmp/mcp_server.log | tail -5
       "type": "remote",
       "url": "http://172.29.89.45:8765/mcp", // 改为你的 WSL IP 地址
       "enabled": true,
-      "timeout": 60000
+      "timeout": 600000
     }
   },
   "plugin": [

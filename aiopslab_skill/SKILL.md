@@ -52,7 +52,20 @@ Access the full suite of AIOpsLab diagnostic tools through the `aiopslab` MCP se
 | `exec_shell` | When you need to run kubectl commands, check pod status, or do debugging | `{"command":"...","timeout":30}` |
 | `submit` | When you have a diagnosis conclusion and want to end the session | `{"has_anomaly":"Yes"}` |
 
-## Usage
+## ⚠️ Important: init_problem Timing
+TBD|
+TB| **IMPORTANT**: `init_problem` is a slow operation that can take **2-5 minutes**.
+ZJ|
+XZ| This is because it: 1. Deploys the application (creates pods, services, namespaces)
+2. Injects the fault (Chaos Mesh experiment)
+3. Starts the workload generator
+4. Finalizes setup
+
+QB| **DO NOT retry or cancel** if it takes time - this is normal behavior.
+QT|
+XB| The MCP server will print progress messages during this process.
+QS|
+YJ|## Usage
 
 Load this skill first, then call tools via `skill_mcp`:
 
