@@ -261,10 +261,91 @@ MCP server is working correctly - all tools respond properly.
 | `test_e2e_full.py` | 端到端测试脚本 |
 | `check_flower.py` | 问题列表验证脚本 |
 
-## TODO
+MJ|## 已知问题排查
+JK|
+KB|### Helm chart 下载超时（charts.chaos-mesh.org / openebs.github.io）
+PM|
+KB|**症状：**
+```
+Error: INSTALLATION FAILED: Get "https://charts.chaos-mesh.org/chaos-mesh-2.6.2.tgz": ... timeout
+Error: INSTALLATION FAILED: Get "https://openebs.github.io/charts/...": ... timeout
+```
+JS|
+KB|**原因：** 网络无法访问 GitHub Pages 域名（常见于 VPN 环境下）
+KB|
+KB|**解决方案：**
+KB|
+KB|#### 方案 1：确保 VPN/代理可访问 GitHub Pages
+```bash
+curl -I --connect-timeout 15 https://charts.chaos-mesh.org
+curl -I --connect-timeout 15 https://openebs.github.io
+```
+KB|
+KB|#### 方案 2：预装依赖组件
+```bash
+# 预装 Chaos Mesh
+helm repo add chaos-mesh https://charts.chaos-mesh.org --timeout 10m
+helm install chaos-mesh chaos-mesh/chaos-mesh --version 2.6.2 -n chaos-mesh --create-namespace
 
-- [x] 解决 tiktoken 网络依赖（设置 DATA_GYM_CACHE_DIR 环境变量）
-- [x] 启用 Problem Lifecycle 工具（init_problem/submit_diagnosis 等）
-- [x] 验证问题列表提取（93 个问题，2 个 flower）
-- [ ] 配置 MCP Server 开机自启
+# 预装 OpenEBS
+kubectl apply -f https://openebs.github.io/charts/openebs-operator.yaml
+kubectl patch storageclass openebs-hostpath -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}''
+```
+KB|
+KB|#### 方案 3：预拉镜像到 kind 节点
+```bash
+docker exec aiopslab-control-plane ctr -n k8s.io images pull ghcr.io/chaos-mesh/chaos-mesh:v2.6.2
+docker exec aiopslab-control-plane ctr -n k8s.io images pull ghcr.io/openebs/provisioner-localpv:4.0.0
+docker exec aiopslab-control-plane ctr -n k8s.io images pull quay.io/openebs/node-disk-manager:v2.1.0
+```
+KB|
+KB|### OpenEBS Pod 处于 ImagePullBackOff 或 Terminating 状态
+KB|
+KB|**解决方案：**
+```bash
+# 强制删除卡住的 Pod
+kubectl delete namespace openebs --force --grace-period=0
+kubectl delete pods -n openebs --force --grace-period=0 --all
+```
+KB|
+KB|### MCP 请求超时（60秒）
+KB|
+KB|witty 的 MCP 客户端默认超时 60 秒，`init_problem` 需要 2-5 分钟，导致超时。
+KB|
+KB|在 `opencode.json` 中配置超时：
+KB|
+KB|```jsonc
+{
+  "mcp": {
+    "aiopslab": {
+      "type": "remote",
+      "url": "http://172.29.89.45:8765/mcp",
+      "enabled": true,
+      "timeout": 600000
+    }
+  },
+  "experimental": {
+    "mcp_timeout": 600000
+  }
+}
+```
+KB|
+KB|### 集群残留状态清理
+KB|
+KB|如果 `init_problem` 中途失败，可能残留以下 namespace：
+KB|
+KB|```bash
+kubectl delete namespace openebs chaos-mesh test-hotel-reservation --force --grace-period=0
+```
+KB|
+KB|---
+BQ|
+JR|## TODO
+RK|
+NK|- [x] 解决 tiktoken 网络依赖（设置 DATA_GYM_CACHE_DIR 环境变量）
+NK|- [x] 启用 Problem Lifecycle 工具（init_problem/submit_diagnosis 等）
+NK|- [x] 验证问题列表提取（93 个问题，2 个 flower）
+NK|- [x] 配置 MCP 超时（experimental.mcp_timeout: 600000）
+NK|- [x] 添加网络故障排查文档
+NK|- [ ] 配置 MCP Server 开机自启
 - [ ] 实现端到端故障诊断流程（需 K8s 集群）
